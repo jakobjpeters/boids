@@ -1,12 +1,12 @@
 
-use std::{iter::zip, f32::consts::PI, cmp::Ordering};
+use std::f32::consts::PI;
 use rand::random;
 use itertools::Itertools;
 use bevy::{
     prelude::*,
     sprite::{Mesh2dHandle, MaterialMesh2dBundle},
     render::mesh::PrimitiveTopology::TriangleList,
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin}
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
 };
 
 fn main() {
@@ -21,7 +21,8 @@ fn main() {
         .add_plugins(LogDiagnosticsPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, update)
+        .add_systems(Update, popup)
+        .add_systems(Update, boids)
         .run();
 }
 
@@ -30,8 +31,6 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    commands.spawn(Camera2dBundle::default());
-
     let points = [17., 19.]
         .map(|x| {
                 let theta = PI / 12. * x;
@@ -52,12 +51,56 @@ fn setup(
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes.add(mesh).into(),
         material: materials.add(ColorMaterial::from(Color::BLUE)),
+        visibility: Visibility::Hidden,
         ..default()
     });
+
+    commands.spawn(Text2dBundle {
+        text: Text::from_sections([
+            TextSection::new(
+                "Boids\n",
+                TextStyle {
+                    font_size: 64.,
+                    ..default()
+                }
+            ),
+            TextSection::new(
+                "Press `escape` to start the simulation\n\n",
+                TextStyle {
+                    font_size: 48.,
+                    ..default()
+                }
+            ),
+            TextSection::new(
+                "Separation: boids should avoid crowding nearby boids.\nAlignment: boids should fly in the same direction as nearby boids.\nCohesion: boids should be near other boids.",
+                TextStyle {
+                    font_size: 32.,
+                    ..default()
+                }
+            )
+        ]),
+        visibility: Visibility::Visible,
+        ..default()
+    });
+
+    commands.spawn(Camera2dBundle::default());
 }
 
-fn update(query: Query<&Mesh2dHandle>, assets: ResMut<Assets<Mesh>>, _time: Res<Time>) {
-    let mesh = assets
+fn popup(mut visibilities: Query<&mut Visibility>, keys: Res<Input<KeyCode>>) {
+    if keys.just_pressed(KeyCode::Escape) {
+        visibilities
+            .for_each_mut(|mut visibility| {
+                *visibility = match *visibility {
+                Visibility::Visible => Visibility::Hidden,
+                Visibility::Hidden => Visibility::Visible,
+                Visibility::Inherited => Visibility::Inherited
+            };
+        })
+    }
+}
+
+fn boids(query: Query<&Mesh2dHandle>, meshes: ResMut<Assets<Mesh>>, _time: Res<Time>) {
+    let mesh = meshes
         .into_inner()
         .get_mut(&query.single().0)
         .unwrap();
