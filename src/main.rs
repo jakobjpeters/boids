@@ -9,6 +9,9 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
 };
 
+const BORDER: f32 = 512.;
+const SPEED: f32 = 4.;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -38,7 +41,7 @@ fn setup(
             });
     let vertices = (1..100)
         .flat_map(|_| {
-                let position = 512. * (Vec2::new(random(), random()) - 0.5);
+                let position = BORDER * (Vec2::new(random(), random()) - 0.5);
                 let rotation = Vec2::from_angle(2. * PI * random::<f32>());
                 [rotation.rotate(points[0]), rotation.rotate(points[1]), Vec2::ZERO]
                     .map(|point| (point + position).extend(0.).to_array())
@@ -99,7 +102,9 @@ fn popup(mut visibilities: Query<&mut Visibility>, keys: Res<Input<KeyCode>>) {
     }
 }
 
-fn boids(query: Query<&Mesh2dHandle>, meshes: ResMut<Assets<Mesh>>, _time: Res<Time>) {
+fn boids(query: Query<&Mesh2dHandle>, meshes: ResMut<Assets<Mesh>>, time: Res<Time>) {
+    let delta = SPEED * time.delta_seconds();
+
     let mesh = meshes
         .into_inner()
         .get_mut(&query.single().0)
@@ -121,8 +126,8 @@ fn boids(query: Query<&Mesh2dHandle>, meshes: ResMut<Assets<Mesh>>, _time: Res<T
                 vertices
                     .iter()
                     .map(|vertex| [
-                            vertex[0] + (0.05 * (vertices[0][1] - vertices[1][1])),
-                            vertex[1] + (-0.05 * (vertices[0][0] - vertices[1][0])),
+                            vertex[0] + (delta * (vertices[0][1] - vertices[1][1])),
+                            vertex[1] + (-delta * (vertices[0][0] - vertices[1][0])),
                             0.
                         ])
                     .collect::<Vec<[f32; 3]>>()
