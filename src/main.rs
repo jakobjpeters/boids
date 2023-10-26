@@ -9,7 +9,8 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
 };
 
-const BORDER: f32 = 512.;
+const BOIDS: usize = 100;
+const BORDER: f32 = 256.;
 const SPEED: f32 = 4.;
 
 fn main() {
@@ -34,16 +35,17 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let points = [17., 19.]
+    let tail = [17., 19.]
         .map(|x| {
                 let theta = PI / 12. * x;
                 16. * (theta.cos() * Vec2::X + theta.sin() * Vec2::Y)
             });
-    let vertices = (1..100)
+    let vertices = (1..BOIDS)
         .flat_map(|_| {
                 let position = BORDER * (Vec2::new(random(), random()) - 0.5);
                 let rotation = Vec2::from_angle(2. * PI * random::<f32>());
-                [rotation.rotate(points[0]), rotation.rotate(points[1]), Vec2::ZERO]
+
+                [rotation.rotate(tail[0]), rotation.rotate(tail[1]), Vec2::ZERO]
                     .map(|point| (point + position).extend(0.).to_array())
             })
         .collect::<Vec<[f32; 3]>>();
@@ -119,19 +121,27 @@ fn boids(query: Query<&Mesh2dHandle>, meshes: ResMut<Assets<Mesh>>, time: Res<Ti
         .chunks(3)
         .into_iter()
         .flat_map(|chunk| {
-                let vertices = chunk
-                    .map(|vertex| *vertex)
-                    .collect::<Vec<[f32; 3]>>();
+                let boid = chunk
+                    .map(|[x, y, _]| [*x, *y])
+                    .collect::<Vec<[f32; 2]>>();
 
-                vertices
+                let wrapped_head = boid[2].map(|n| (n + BORDER).rem_euclid(2. * BORDER) - BORDER);
+                let [delta_x, delta_y] = [boid[2][0] - wrapped_head[0], boid[2][1] - wrapped_head[1]];
+                let wrapped_boid = [
+                    [boid[0][0] - delta_x, boid[0][1] - delta_y],
+                    [boid[1][0] - delta_x, boid[1][1] - delta_y],
+                    wrapped_head
+                ];
+
+                wrapped_boid
                     .iter()
-                    .map(|vertex| [
-                            vertex[0] + (delta * (vertices[0][1] - vertices[1][1])),
-                            vertex[1] + (-delta * (vertices[0][0] - vertices[1][0])),
-                            0.
+                    .map(|[x, y]| [
+                            x + (delta * (wrapped_boid[0][1] - wrapped_boid[1][1])),
+                            y + (-delta * (wrapped_boid[0][0] - wrapped_boid[1][0]))
                         ])
-                    .collect::<Vec<[f32; 3]>>()
+                    .collect::<Vec<[f32; 2]>>()
             })
+        .map(|[x, y]| [x, y, 0.])
         .collect::<Vec<[f32; 3]>>();
 
     mesh.remove_attribute(Mesh::ATTRIBUTE_POSITION);
