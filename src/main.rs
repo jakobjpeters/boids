@@ -1,5 +1,5 @@
 
-use std::{f32::{consts::PI, EPSILON}, iter::zip};
+use std::{f32::consts::PI, iter::zip};
 use rand::random;
 use bevy::{
     prelude::*,
@@ -9,8 +9,8 @@ use bevy::{
 };
 
 const BORDER: f32 = 512.;
-const BOIDS: usize = 32;
-const SCALE: f32 = 8.;
+const BOIDS: usize = 64;
+const SCALE: f32 = 4.;
 const SPEED: f32 = 100.;
 const ALIGNMENT: f32 = 1.;
 
@@ -117,22 +117,17 @@ fn boids(mut transforms: Query<&mut Transform, With<Boid>>, time: Res<Time>) {
                 .filter(|b| a != **b)
                 .map(|b| b.local_y() / a.translation.distance(b.translation))
                 .sum::<Vec3>()
-                .normalize_or_zero()
             )
         .collect::<Vec<Vec3>>();
 
     for (mut transform, velocity) in zip(&mut transforms, velocities) {
-        let a = if velocity == Vec3::ZERO { transform.local_y() } else {
-            velocity
-        };
-
+        let a = velocity.normalize();
         let forward_dot = transform.local_y().dot(a);
-        let right = transform.rotation * Vec3::X;
-        let right_dot = right.dot(a);
-        let sign = -f32::copysign(1.0, right_dot);
-        let max_angle = forward_dot.clamp(-1.0, 1.0).acos();
-        let rotation_angle = sign * (ALIGNMENT * time.delta_seconds()).min(max_angle);
-        transform.rotate_z(rotation_angle);
+        let right_dot = (transform.rotation * Vec3::X).dot(a);
+        transform.rotate_z(
+            -f32::copysign(1.0, right_dot) * (ALIGNMENT * time.delta_seconds() * velocity.length())
+                .min(forward_dot.clamp(-1.0, 1.0).acos())
+        );
 
         transform.translation = (
             transform.translation + SPEED * transform.local_y() * time.delta_seconds() + BORDER
