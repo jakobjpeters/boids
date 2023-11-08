@@ -1,5 +1,5 @@
 
-use std::{f32::consts::PI, iter::zip};
+use std::{iter::zip, f32::consts::PI};
 use rand::random;
 use bevy::{
     prelude::*,
@@ -9,10 +9,12 @@ use bevy::{
 };
 
 const BORDER: f32 = 512.;
-const BOIDS: usize = 64;
+const BOIDS: usize = 128;
 const SCALE: f32 = 4.;
-const SPEED: f32 = 100.;
-const ALIGNMENT: f32 = 1.;
+const SPEED: f32 = 128.;
+const ALIGNMENT: f32 = 8.;
+const COHESION: f32 = 1.;
+const SEPARATION: f32 = 64.;
 
 #[derive(Component)]
 struct Boid;
@@ -109,25 +111,36 @@ fn popup(mut visibilities: Query<&mut Visibility>, keys: Res<Input<KeyCode>>) {
     }
 }
 
+fn rotate(transform: &mut Transform, x: Vec3, scale: f32) { if x != Vec3::ZERO {
+    let normal = x.normalize();
+    let forward_dot = transform.local_y().dot(normal);
+    let right_dot = (transform.rotation * Vec3::X).dot(normal);
+    transform.rotate_z(-f32::copysign(1.0, right_dot) * scale.min(forward_dot.clamp(-1.0, 1.0).acos()));
+} }
+
 fn boids(mut transforms: Query<&mut Transform, With<Boid>>, time: Res<Time>) {
-    let velocities = transforms
+    let xs = transforms
         .iter()
         .map(|&a| transforms
                 .iter()
-                .filter(|b| a != **b)
-                .map(|b| b.local_y() / a.translation.distance(b.translation))
-                .sum::<Vec3>()
+                .filter(|b| a.translation != b.translation)
+                .map(|b| {
+                        let distance = a.translation.distance(b.translation);
+                        (b.local_y() / distance, b.translation / distance, (distance, b.translation))
+                    })
+                .reduce(|xs, ys| (xs.0 + ys.0, xs.1 + ys.1, if xs.2.0 < ys.2.0 { xs.2 } else { ys.2 }))
+                .map(|xs| [xs.0, xs.1, xs.2.1])
+                .unwrap()
             )
-        .collect::<Vec<Vec3>>();
+        .collect::<Vec<[Vec3; 3]>>();
 
-    for (mut transform, velocity) in zip(&mut transforms, velocities) {
-        let a = velocity.normalize();
-        let forward_dot = transform.local_y().dot(a);
-        let right_dot = (transform.rotation * Vec3::X).dot(a);
-        transform.rotate_z(
-            -f32::copysign(1.0, right_dot) * (ALIGNMENT * time.delta_seconds() * velocity.length())
-                .min(forward_dot.clamp(-1.0, 1.0).acos())
-        );
+    for (mut transform, x) in zip(&mut transforms, xs) {
+        let delta_seconds = time.delta_seconds();
+        let [centroid, nearest] = [1, 2].map(|i| x[i] - transform.translation);
+
+        rotate(&mut transform, x[0], ALIGNMENT * delta_seconds * x[0].length());
+        rotate(&mut transform, centroid, COHESION * delta_seconds * centroid.length() / BOIDS as f32);
+        rotate(&mut transform, -nearest, SEPARATION * delta_seconds / nearest.length());
 
         transform.translation = (
             transform.translation + SPEED * transform.local_y() * time.delta_seconds() + BORDER
