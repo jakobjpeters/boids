@@ -24,7 +24,7 @@ const SEPARATION: f32 = 64.;
 struct Boid;
 
 #[derive(Component)]
-struct Parameter;
+struct Anchor;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum State {
@@ -32,6 +32,20 @@ enum State {
     Menu,
     Play,
     Pause
+}
+
+#[derive(Component, Clone, Copy)]
+enum Parameter {
+    Separation,
+    Alignment,
+    Cohesion
+}
+
+#[derive(Resource)]
+struct Parameters {
+    separation: f32,
+    alignment: f32,
+    cohesion: f32
 }
 
 fn main() { App::new()
@@ -47,6 +61,11 @@ fn main() { App::new()
         FrameTimeDiagnosticsPlugin::default()
     ))
     .add_state::<State>()
+    .insert_resource(Parameters {
+        separation: 64.,
+        alignment: 8.,
+        cohesion: 1.
+    })
     .add_systems(Startup, setup)
     .add_systems(Update, (
         menu.run_if(in_state(State::Menu)),
@@ -69,6 +88,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     window: Query<&Window, With<PrimaryWindow>>,
+    parameters: Res<Parameters>
 ) {
     let resolution = resolution(window);
 
@@ -157,7 +177,11 @@ You can adjust how strong each of these parameters are by moving the sliders on 
         });
     });
 
-    for top in [360., 409., 458.] {
+    for (top, value, parameter) in [
+        (360., parameters.separation, Parameter::Separation),
+        (409., parameters.alignment, Parameter::Alignment),
+        (458., parameters.cohesion, Parameter::Cohesion)
+    ] {
         commands.spawn(NodeBundle {
             style: Style {
                 left: Val::Px(210.),
@@ -168,8 +192,8 @@ You can adjust how strong each of these parameters are by moving the sliders on 
             ..default()
         })
         .with_children(|parent| {
-            parent.spawn((Parameter, TextBundle {
-                text: Text::from_section("X", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+            parent.spawn((Anchor, TextBundle {
+                text: Text::from_section(value.to_string(), TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
                 ..default()
             }))
             .with_children(|parent| {
@@ -188,14 +212,14 @@ You can adjust how strong each of these parameters are by moving the sliders on 
                         ..default()
                     })
                     .with_children(|parent| {
-                        parent.spawn(TextBundle::from_section(
+                        parent.spawn((parameter, TextBundle::from_section(
                             value,
                             TextStyle {
                                 font_size: 24.,
                                 color: Color::BLACK,
                                 ..default()
                             }
-                        ));
+                        )));
                     });
                 }
             });
@@ -235,8 +259,9 @@ fn play(
     mut next_state: ResMut<NextState<State>>,
     keys: Res<Input<KeyCode>>,
     mut transforms: Query<&mut Transform, With<Boid>>,
+    window: Query<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
-    window: Query<&Window, With<PrimaryWindow>>
+    parameters: Res<Parameters>
 ) {
     next_state.set(match keys.get_just_pressed().next() {
         Some(KeyCode::Escape) => State::Menu,
@@ -265,9 +290,9 @@ fn play(
     for (mut transform, x) in zip(&mut transforms, xs) {
         let [centroid, nearest] = [1, 2].map(|i| x[i] - transform.translation);
 
-        rotate(&mut transform, x[0], ALIGNMENT * delta_seconds * x[0].length());
-        rotate(&mut transform, centroid, COHESION * delta_seconds * centroid.length() / BOIDS as f32);
-        rotate(&mut transform, -nearest, SEPARATION * delta_seconds / nearest.length());
+        rotate(&mut transform, -nearest, parameters.separation * delta_seconds / nearest.length());
+        rotate(&mut transform, x[0], parameters.alignment * delta_seconds * x[0].length());
+        rotate(&mut transform, centroid, parameters.cohesion * delta_seconds * centroid.length() / BOIDS as f32);
 
         transform.translation = (
             transform.translation + SPEED * transform.local_y() * time.delta_seconds() + offset
@@ -284,22 +309,47 @@ fn pause(mut next_state: ResMut<NextState<State>>, keys: Res<Input<KeyCode>>) {
 }
 
 fn buttons(
-    mut query: Query<(&mut Text, &Children), With<Parameter>>,
-    mut interactions: Query<(&Interaction, &mut BorderColor), (Changed<Interaction>, With<Button>)>
+    mut texts: Query<(&mut Text, &Children), With<Anchor>>,
+    mut buttons: Query<(&Parameter, &Text), Without<Anchor>>,
+    mut interactions: Query<(&Interaction, &mut BorderColor, &Children), (Changed<Interaction>, With<Button>)>,
+    mut parameters: ResMut<Parameters>
 ) {
-    for (mut text, children) in &mut query {
-        for child in children {
-            let s = thread_rng().gen_range(1..11).to_string();
-            match interactions.get_mut(*child) {
-                Ok((interaction, mut border_color)) => {
-                    match *interaction {
+    for (mut text, text_children) in &mut texts {
+        for text_child in text_children {
+            match interactions.get_mut(*text_child) {
+                Ok((interaction, mut border_color, interaction_children)) => {
+                    match interaction {
                         Interaction::Pressed => {
+                            for button_child in interaction_children {
+                                match buttons.get_mut(*button_child) {
+                                    Ok((parameter, button_text)) => {
+                                        let n = ((button_text.sections.iter().next().unwrap().value == "+") as usize as f32 * 2.) - 1.;
+                                        *text = Text::from_section(
+                                            match parameter {
+                                                Parameter::Separation => {
+                                                    parameters.separation += n;
+                                                    parameters.separation
+                                                },
+                                                Parameter::Alignment => {
+                                                    parameters.alignment += n;
+                                                    parameters.alignment
+                                                },
+                                                Parameter::Cohesion => {
+                                                    parameters.cohesion += n;
+                                                    parameters.cohesion
+                                                }
+                                            }.to_string(),
+                                            TextStyle {
+                                                font_size: 24.,
+                                                color: Color::BLACK,
+                                                ..default()
+                                            }
+                                        );
+                                    },
+                                    _ => ()
+                                }
+                            }
                             border_color.0 = Color::BLUE;
-                            *text = Text::from_section(s, TextStyle {
-                                font_size: 24.,
-                                color: Color::BLACK,
-                                ..default()
-                            });
                         },
                         Interaction::Hovered => border_color.0 = Color::WHITE,
                         Interaction::None => border_color.0 = Color::BLACK
@@ -307,16 +357,6 @@ fn buttons(
                 },
                 _ => ()
             }
-        }
-    }
-}
-
-fn _buttons(mut interactions: Query<(&Interaction, &mut BorderColor), (Changed<Interaction>, With<Button>)>) {
-    for (interaction, mut border_color) in &mut interactions {
-        match *interaction {
-            Interaction::Pressed => border_color.0 = Color::BLUE,
-            Interaction::Hovered => border_color.0 = Color::WHITE,
-            Interaction::None => border_color.0 = Color::BLACK
         }
     }
 }
