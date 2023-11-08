@@ -4,11 +4,11 @@ use rand::random;
 use bevy::{
     prelude::*,
     render::mesh,
+    window::PrimaryWindow,
     sprite::MaterialMesh2dBundle,
     diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}
 };
 
-const BORDER: f32 = 512.;
 const BOIDS: usize = 128;
 const SCALE: f32 = 4.;
 const SPEED: f32 = 128.;
@@ -59,11 +59,19 @@ fn main() { App::new()
     .run();
 }
 
+fn resolution(window: Query<&Window, With<PrimaryWindow>>) -> Vec3 {
+    let resolution = &window.single().resolution;
+    Vec3::new(resolution.width(), resolution.height(), 1.)
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Query<&Window, With<PrimaryWindow>>
 ) {
+    let resolution = resolution(window);
+
     for _ in 1..BOIDS + 1 {
         let mut mesh = Mesh::new(mesh::PrimitiveTopology::TriangleList);
         mesh.insert_attribute(
@@ -77,8 +85,8 @@ fn setup(
                 mesh: meshes.add(mesh).into(),
                 transform: Transform {
                     translation: Vec3::new(
-                        2. * BORDER * random::<f32>() - BORDER,
-                        2. * BORDER * random::<f32>() - BORDER,
+                        resolution.x * random::<f32>() - resolution.x / 2.,
+                        resolution.y * random::<f32>() - resolution.y / 2.,
                     0.),
                     rotation: Quat::from_rotation_z(2.0 * PI * random::<f32>()),
                     scale: Vec3::splat(SCALE)
@@ -148,7 +156,8 @@ fn play(
     mut next_state: ResMut<NextState<AppState>>,
     keys: Res<Input<KeyCode>>,
     mut transforms: Query<&mut Transform, With<Boid>>,
-    time: Res<Time>
+    time: Res<Time>,
+    window: Query<&Window, With<PrimaryWindow>>
 ) {
     next_state.set(match keys.get_just_pressed().next() {
         Some(KeyCode::Escape) => AppState::Menu,
@@ -156,6 +165,8 @@ fn play(
         _ => AppState::Play
     });
 
+    let delta_seconds = time.delta_seconds();
+    let resolution = resolution(window);
     let xs = transforms
         .iter()
         .map(|&a| transforms
@@ -172,7 +183,6 @@ fn play(
         .collect::<Vec<[Vec3; 3]>>();
 
     for (mut transform, x) in zip(&mut transforms, xs) {
-        let delta_seconds = time.delta_seconds();
         let [centroid, nearest] = [1, 2].map(|i| x[i] - transform.translation);
 
         rotate(&mut transform, x[0], ALIGNMENT * delta_seconds * x[0].length());
@@ -180,8 +190,8 @@ fn play(
         rotate(&mut transform, -nearest, SEPARATION * delta_seconds / nearest.length());
 
         transform.translation = (
-            transform.translation + SPEED * transform.local_y() * time.delta_seconds() + BORDER
-        ).rem_euclid(2. * BORDER * Vec3::ONE) - BORDER;
+            transform.translation + SPEED * transform.local_y() * time.delta_seconds() + resolution / 2.
+        ).rem_euclid(resolution) - resolution / 2.;
     }
 }
 
