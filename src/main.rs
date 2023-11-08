@@ -6,27 +6,19 @@ use bevy::{
     render::mesh,
     window::PrimaryWindow,
     sprite::MaterialMesh2dBundle,
+    text::Text2dBounds,
     diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}
 };
 
+const MARGIN: f32 = 32.;
+const WIDTH: f32 = 256. + 2. * MARGIN;
 const BOIDS: usize = 128;
+const BOID_COLOR: Color = Color::TEAL;
 const SCALE: f32 = 4.;
 const SPEED: f32 = 128.;
 const ALIGNMENT: f32 = 8.;
 const COHESION: f32 = 1.;
 const SEPARATION: f32 = 64.;
-const EXPLANATION: &str = r#"
-This is the start menu. After you press `escape`, the simulation will start.
-Each triangle represents a `boid`, which is a simulated bird.
-They will move forward and adjust their direction depending on three parameters:
-
-1) Separation: boids avoid crashing into each other
-2) Alignment: boids rotate to face the same direction as nearby boids
-3) Cohesion: boids try to flock together in groups
-
-You can adjust how strong each of these parameters are by moving the sliders on the ride-hand side of the simulation.
-Once the simulation is running, you can return to this menu by pressing `escape` again.
-"#;
 
 #[derive(Component)]
 struct Boid;
@@ -40,20 +32,24 @@ enum AppState {
 }
 
 fn main() { App::new()
-    .add_plugins(DefaultPlugins.set(WindowPlugin {
+    .add_plugins((
+        DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "boids".into(),
                 ..default()
             }),
             ..default()
-        }))
-    .add_plugins(LogDiagnosticsPlugin::default())
-    .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        }),
+        LogDiagnosticsPlugin::default(),
+        FrameTimeDiagnosticsPlugin::default()
+    ))
     .add_state::<AppState>()
     .add_systems(Startup, setup)
-    .add_systems(Update, menu.run_if(in_state(AppState::Menu)))
-    .add_systems(Update, play.run_if(in_state(AppState::Play)))
-    .add_systems(Update, pause.run_if(in_state(AppState::Pause)))
+    .add_systems(Update, (
+        menu.run_if(in_state(AppState::Menu)),
+        play.run_if(in_state(AppState::Play)),
+        pause.run_if(in_state(AppState::Pause))
+    ))
     .add_systems(OnEnter(AppState::Menu), transition)
     .add_systems(OnExit(AppState::Menu), transition)
     .run();
@@ -61,16 +57,48 @@ fn main() { App::new()
 
 fn resolution(window: Query<&Window, With<PrimaryWindow>>) -> Vec3 {
     let resolution = &window.single().resolution;
-    Vec3::new(resolution.width(), resolution.height(), 1.)
+    Vec3::new(resolution.width() - WIDTH, resolution.height(), 1.)
 }
 
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    window: Query<&Window, With<PrimaryWindow>>
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     let resolution = resolution(window);
+
+    commands.spawn(Camera2dBundle::default());
+
+    commands.spawn(Text2dBundle {
+        text: Text::from_sections([
+            TextSection::new(
+                "Boids\n",
+                TextStyle {
+                    font_size: 64.,
+                    ..default()
+                }
+            ),
+            TextSection::new(
+                r#"
+This is the start menu. Press `escape` to start the simulation or `space` to exit the menu. Each triangle represents a `boid`, which is a simulated bird. They will move forward and adjust their direction depending on three parameters:
+
+1) Separation: boids avoid crashing into each other
+2) Alignment: boids rotate to face the same direction as nearby boids
+3) Cohesion: boids try to flock together in groups
+
+You can adjust how strong each of these parameters are by moving the sliders on the right-hand side of the simulation. Once the simulation is running, you can return to this menu by pressing `escape` again.
+                "#,
+                TextStyle {
+                    font_size: 32.,
+                    ..default()
+                }
+            )
+        ]),
+        visibility: Visibility::Hidden,
+        text_2d_bounds: Text2dBounds { size: resolution.xy() },
+        ..default()
+    });
 
     for _ in 1..BOIDS + 1 {
         let mut mesh = Mesh::new(mesh::PrimitiveTopology::TriangleList);
@@ -85,56 +113,99 @@ fn setup(
                 mesh: meshes.add(mesh).into(),
                 transform: Transform {
                     translation: Vec3::new(
-                        resolution.x * random::<f32>() - resolution.x / 2.,
+                        resolution.x * random::<f32>() - (resolution.x - WIDTH) / 2.,
                         resolution.y * random::<f32>() - resolution.y / 2.,
                     0.),
                     rotation: Quat::from_rotation_z(2.0 * PI * random::<f32>()),
                     scale: Vec3::splat(SCALE)
                 },
-                material: materials.add(ColorMaterial::from(Color::BLUE)),
+                material: materials.add(ColorMaterial::from(BOID_COLOR)),
                 visibility: Visibility::Visible,
                 ..default()
             }
         ));
     }
 
-    commands.spawn(Text2dBundle {
-        text: Text::from_sections([
-            TextSection::new(
-                "Boids\n",
-                TextStyle {
-                    font_size: 64.,
-                    ..default()
-                }
-            ),
-            TextSection::new(
-                "Press `escape` to start the simulation\n\n",
-                TextStyle {
-                    font_size: 48.,
-                    ..default()
-                }
-            ),
-            TextSection::new(
-                EXPLANATION,
-                TextStyle {
-                    font_size: 32.,
-                    ..default()
-                }
-            )
-        ]),
-        visibility: Visibility::Hidden,
+    commands.spawn(NodeBundle {
+        style: Style {
+            width: Val::Px(WIDTH),
+            height: Val::Percent(100.),
+            ..default()
+        },
+        background_color: Color::GRAY.into(),
+        visibility: Visibility::Visible,
         ..default()
+    })
+    .with_children(|parent| {
+        parent.spawn(TextBundle {
+            text: Text::from_sections([
+                TextSection::new("Controls\n\n", TextStyle { color: Color::BLACK, font_size: 32., ..default() }),
+                TextSection::new("Press `escape` to see\nthe start menu\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Press `space` to\npause or unpause\nthe simulation\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Press the `-` and `+` buttons to adjust\neach parameter\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Separation:", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("    1\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Alignment:", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("     2\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Cohesion:", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("      3", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+            ]),
+            style: Style {
+                top: Val::Px(MARGIN),
+                left: Val::Px(MARGIN),
+                ..default()
+            },
+            ..default()
+        });
     });
 
-    commands.spawn(Camera2dBundle::default());
+    for (top, left, value) in [
+        (364., 180., "-"),
+        (364., 240., "+"),
+        (414., 180., "-"),
+        (414., 240., "+"),
+        (460., 180., "-"),
+        (460., 240., "+"),
+    ] {
+        commands.spawn(ButtonBundle {
+            style: Style {
+                width: Val::Px(16.0),
+                height: Val::Px(16.0),
+                border: UiRect::all(Val::Px(2.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                top: Val::Px(top),
+                left: Val::Px(left),
+                ..default()
+            },
+            background_color: BOID_COLOR.into(),
+            border_color: Color::BLACK.into(),
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn(TextBundle::from_section(
+                value,
+                TextStyle {
+                    font_size: 24.,
+                    color: Color::BLACK,
+                    ..default()
+                },
+            ));
+        });
+    }
 }
 
-fn transition(mut visibilities: Query<&mut Visibility>) {
+fn transition(mut visibilities: Query<&mut Visibility>, mut styles: Query<&mut Style>) {
     visibilities.for_each_mut(|mut visibility| *visibility = match *visibility {
         Visibility::Visible => Visibility::Hidden,
         Visibility::Hidden => Visibility::Visible,
         Visibility::Inherited => Visibility::Inherited
-    })
+    });
+
+    styles.for_each_mut(|mut style| style.display = match style.display {
+        Display::None => Display::DEFAULT,
+        _ => Display::None
+    });
 }
 
 fn menu(mut next_state: ResMut<NextState<AppState>>, keys: Res<Input<KeyCode>>) {
@@ -167,6 +238,7 @@ fn play(
 
     let delta_seconds = time.delta_seconds();
     let resolution = resolution(window);
+    let offset = (resolution - (WIDTH * Vec3::X)) / 2.;
     let xs = transforms
         .iter()
         .map(|&a| transforms
@@ -190,8 +262,8 @@ fn play(
         rotate(&mut transform, -nearest, SEPARATION * delta_seconds / nearest.length());
 
         transform.translation = (
-            transform.translation + SPEED * transform.local_y() * time.delta_seconds() + resolution / 2.
-        ).rem_euclid(resolution) - resolution / 2.;
+            transform.translation + SPEED * transform.local_y() * time.delta_seconds() + offset
+        ).rem_euclid(resolution) - offset;
     }
 }
 
