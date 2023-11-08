@@ -1,6 +1,6 @@
 
 use std::{iter::zip, f32::consts::PI};
-use rand::random;
+use rand::{random, thread_rng, Rng};
 use bevy::{
     prelude::*,
     render::mesh,
@@ -22,6 +22,9 @@ const SEPARATION: f32 = 64.;
 
 #[derive(Component)]
 struct Boid;
+
+#[derive(Component)]
+struct Parameter;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum State {
@@ -108,23 +111,20 @@ You can adjust how strong each of these parameters are by moving the sliders on 
             vec![[-1., 0., 0.], [1., 0., 0.], [0., 3., 0.]],
         );
 
-        commands.spawn((
-            Boid,
-            MaterialMesh2dBundle {
-                mesh: meshes.add(mesh).into(),
-                transform: Transform {
-                    translation: Vec3::new(
-                        resolution.x * random::<f32>() - (resolution.x - WIDTH) / 2.,
-                        resolution.y * random::<f32>() - resolution.y / 2.,
-                    0.),
-                    rotation: Quat::from_rotation_z(2.0 * PI * random::<f32>()),
-                    scale: Vec3::splat(SCALE)
-                },
-                material: materials.add(ColorMaterial::from(BOID_COLOR)),
-                visibility: Visibility::Visible,
-                ..default()
-            }
-        ));
+        commands.spawn((Boid, MaterialMesh2dBundle {
+            mesh: meshes.add(mesh).into(),
+            transform: Transform {
+                translation: Vec3::new(
+                    resolution.x * random::<f32>() - (resolution.x - WIDTH) / 2.,
+                    resolution.y * random::<f32>() - resolution.y / 2.,
+                0.),
+                rotation: Quat::from_rotation_z(2.0 * PI * random::<f32>()),
+                scale: Vec3::splat(SCALE)
+            },
+            material: materials.add(ColorMaterial::from(BOID_COLOR)),
+            visibility: Visibility::Visible,
+            ..default()
+        }));
     }
 
     commands.spawn(NodeBundle {
@@ -144,12 +144,9 @@ You can adjust how strong each of these parameters are by moving the sliders on 
                 TextSection::new("Press `escape` to see\nthe start menu\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
                 TextSection::new("Press `space` to\npause or unpause\nthe simulation\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
                 TextSection::new("Press the `-` and `+` buttons to adjust\neach parameter\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
-                TextSection::new("Separation:", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
-                TextSection::new("    1\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
-                TextSection::new("Alignment:", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
-                TextSection::new("     2\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Separation:\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                TextSection::new("Alignment:\n\n", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
                 TextSection::new("Cohesion:", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
-                TextSection::new("      3", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
             ]),
             style: Style {
                 top: Val::Px(MARGIN),
@@ -160,38 +157,48 @@ You can adjust how strong each of these parameters are by moving the sliders on 
         });
     });
 
-    for (top, left, value) in [
-        (364., 180., "-"),
-        (364., 240., "+"),
-        (414., 180., "-"),
-        (414., 240., "+"),
-        (460., 180., "-"),
-        (460., 240., "+"),
-    ] {
-        commands.spawn(ButtonBundle {
+    for top in [360., 409., 458.] {
+        commands.spawn(NodeBundle {
             style: Style {
-                width: Val::Px(16.0),
-                height: Val::Px(16.0),
-                border: UiRect::all(Val::Px(2.0)),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
+                left: Val::Px(210.),
                 top: Val::Px(top),
-                left: Val::Px(left),
                 ..default()
             },
-            background_color: BOID_COLOR.into(),
-            border_color: Color::BLACK.into(),
+            z_index: ZIndex::Local(1),
             ..default()
         })
         .with_children(|parent| {
-            parent.spawn(TextBundle::from_section(
-                value,
-                TextStyle {
-                    font_size: 24.,
-                    color: Color::BLACK,
-                    ..default()
-                },
-            ));
+            parent.spawn((Parameter, TextBundle {
+                text: Text::from_section("X", TextStyle { color: Color::BLACK, font_size: 24., ..default() }),
+                ..default()
+            }))
+            .with_children(|parent| {
+                for (offset, value) in [(-40., "-"), (10., "+")] {
+                    parent.spawn(ButtonBundle {
+                        style: Style {
+                            width: Val::Px(24.0),
+                            height: Val::Px(24.0),
+                            border: UiRect::all(Val::Px(2.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            left: Val::Px(offset),
+                            ..default()
+                        },
+                        background_color: BOID_COLOR.into(),
+                        ..default()
+                    })
+                    .with_children(|parent| {
+                        parent.spawn(TextBundle::from_section(
+                            value,
+                            TextStyle {
+                                font_size: 24.,
+                                color: Color::BLACK,
+                                ..default()
+                            }
+                        ));
+                    });
+                }
+            });
         });
     }
 }
@@ -276,7 +283,35 @@ fn pause(mut next_state: ResMut<NextState<State>>, keys: Res<Input<KeyCode>>) {
     });
 }
 
-fn buttons(mut interactions: Query<(&Interaction, &mut BorderColor), (Changed<Interaction>, With<Button>)>) {
+fn buttons(
+    mut query: Query<(&mut Text, &Children), With<Parameter>>,
+    mut interactions: Query<(&Interaction, &mut BorderColor), (Changed<Interaction>, With<Button>)>
+) {
+    for (mut text, children) in &mut query {
+        for child in children {
+            let s = thread_rng().gen_range(1..11).to_string();
+            match interactions.get_mut(*child) {
+                Ok((interaction, mut border_color)) => {
+                    match *interaction {
+                        Interaction::Pressed => {
+                            border_color.0 = Color::BLUE;
+                            *text = Text::from_section(s, TextStyle {
+                                font_size: 24.,
+                                color: Color::BLACK,
+                                ..default()
+                            });
+                        },
+                        Interaction::Hovered => border_color.0 = Color::WHITE,
+                        Interaction::None => border_color.0 = Color::BLACK
+                    }
+                },
+                _ => ()
+            }
+        }
+    }
+}
+
+fn _buttons(mut interactions: Query<(&Interaction, &mut BorderColor), (Changed<Interaction>, With<Button>)>) {
     for (interaction, mut border_color) in &mut interactions {
         match *interaction {
             Interaction::Pressed => border_color.0 = Color::BLUE,
