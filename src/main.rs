@@ -24,7 +24,7 @@ const SEPARATION: f32 = 64.;
 struct Boid;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
-enum AppState {
+enum State {
     #[default]
     Menu,
     Play,
@@ -43,15 +43,16 @@ fn main() { App::new()
         LogDiagnosticsPlugin::default(),
         FrameTimeDiagnosticsPlugin::default()
     ))
-    .add_state::<AppState>()
+    .add_state::<State>()
     .add_systems(Startup, setup)
     .add_systems(Update, (
-        menu.run_if(in_state(AppState::Menu)),
-        play.run_if(in_state(AppState::Play)),
-        pause.run_if(in_state(AppState::Pause))
+        menu.run_if(in_state(State::Menu)),
+        play.run_if(in_state(State::Play)),
+        pause.run_if(in_state(State::Pause)),
+        buttons.run_if(in_state(State::Play).or_else(in_state(State::Pause)))
     ))
-    .add_systems(OnEnter(AppState::Menu), transition)
-    .add_systems(OnExit(AppState::Menu), transition)
+    .add_systems(OnEnter(State::Menu), transition)
+    .add_systems(OnExit(State::Menu), transition)
     .run();
 }
 
@@ -208,11 +209,11 @@ fn transition(mut visibilities: Query<&mut Visibility>, mut styles: Query<&mut S
     });
 }
 
-fn menu(mut next_state: ResMut<NextState<AppState>>, keys: Res<Input<KeyCode>>) {
+fn menu(mut next_state: ResMut<NextState<State>>, keys: Res<Input<KeyCode>>) {
     next_state.set(match keys.get_just_pressed().next() {
-        Some(KeyCode::Escape) => AppState::Play,
-        Some(KeyCode::Space) => AppState::Pause,
-        _ => AppState::Menu
+        Some(KeyCode::Escape) => State::Play,
+        Some(KeyCode::Space) => State::Pause,
+        _ => State::Menu
     });
 }
 
@@ -224,16 +225,16 @@ fn rotate(transform: &mut Transform, x: Vec3, scale: f32) { if x != Vec3::ZERO {
 } }
 
 fn play(
-    mut next_state: ResMut<NextState<AppState>>,
+    mut next_state: ResMut<NextState<State>>,
     keys: Res<Input<KeyCode>>,
     mut transforms: Query<&mut Transform, With<Boid>>,
     time: Res<Time>,
     window: Query<&Window, With<PrimaryWindow>>
 ) {
     next_state.set(match keys.get_just_pressed().next() {
-        Some(KeyCode::Escape) => AppState::Menu,
-        Some(KeyCode::Space) => AppState::Pause,
-        _ => AppState::Play
+        Some(KeyCode::Escape) => State::Menu,
+        Some(KeyCode::Space) => State::Pause,
+        _ => State::Play
     });
 
     let delta_seconds = time.delta_seconds();
@@ -267,10 +268,20 @@ fn play(
     }
 }
 
-fn pause(mut next_state: ResMut<NextState<AppState>>, keys: Res<Input<KeyCode>>) {
+fn pause(mut next_state: ResMut<NextState<State>>, keys: Res<Input<KeyCode>>) {
     next_state.set(match keys.get_just_pressed().next() {
-        Some(KeyCode::Escape) => AppState::Menu,
-        Some(KeyCode::Space) => AppState::Play,
-        _ => AppState::Pause
+        Some(KeyCode::Escape) => State::Menu,
+        Some(KeyCode::Space) => State::Play,
+        _ => State::Pause
     });
+}
+
+fn buttons(mut interactions: Query<(&Interaction, &mut BorderColor), (Changed<Interaction>, With<Button>)>) {
+    for (interaction, mut border_color) in &mut interactions {
+        match *interaction {
+            Interaction::Pressed => border_color.0 = Color::BLUE,
+            Interaction::Hovered => border_color.0 = Color::WHITE,
+            Interaction::None => border_color.0 = Color::BLACK
+        }
+    }
 }
