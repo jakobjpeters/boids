@@ -59,8 +59,8 @@ fn main() { App::new()
     ))
     .add_state::<State>()
     .insert_resource(Parameters {
-        separation: 64.,
-        alignment: 8.,
+        separation: 8.,
+        alignment: 2.,
         cohesion: 1.
     })
     .add_systems(Startup, setup)
@@ -104,11 +104,11 @@ fn setup(
                 r#"
 This is the start menu. Press `escape` to start the simulation or `space` to exit the menu. Each triangle represents a `boid`, which is a simulated bird. They will move forward and adjust their direction depending on three parameters:
 
-1) Separation: boids avoid crashing into each other
-2) Alignment: boids rotate to face the same direction as nearby boids
-3) Cohesion: boids try to flock together in groups
+1) Separation: avoid colliding into nearby boids
+2) Alignment: face the same direction as nearby boids
+3) Cohesion: flock together with nearby boids
 
-You can adjust how strong each of these parameters are by moving the sliders on the right-hand side of the simulation. Once the simulation is running, you can return to this menu by pressing `escape` again.
+Each parameter is set to a reasonable default value. If you'd like to, you can adjust how strong each of these parameters are by pressing the buttons on the left-hand side of the simulation. Once the simulation is running, you can return to this menu by pressing `escape` again.
                 "#,
                 TextStyle {
                     font_size: 32.,
@@ -287,7 +287,7 @@ fn play(
     for (mut transform, x) in zip(&mut transforms, xs) {
         let [centroid, nearest] = [1, 2].map(|i| x[i] - transform.translation);
 
-        rotate(&mut transform, -nearest, parameters.separation * delta_seconds / nearest.length());
+        rotate(&mut transform, -nearest, parameters.separation.powf(2.) * delta_seconds / nearest.length());
         rotate(&mut transform, x[0], parameters.alignment * delta_seconds * x[0].length());
         rotate(&mut transform, centroid, parameters.cohesion * delta_seconds * centroid.length() / BOIDS as f32);
 
